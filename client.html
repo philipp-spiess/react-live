@@ -1,0 +1,88 @@
+<html>
+  <head>
+    <title>React Live</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const CREATE_INSTANCE = "CREATE_INSTANCE";
+      const CREATE_TEXT_INSTANCE = "CREATE_TEXT_INSTANCE";
+      const APPEND_INITIAL_CHILD = "APPEND_INITIAL_CHILD";
+      const APPEND_CHILD_TO_CONTAINER = "APPEND_CHILD_TO_CONTAINER";
+      const COMMIT_TEXT_UPDATE = "COMMIT_TEXT_UPDATE";
+
+      const EVENT = "EVENT";
+
+      const root = document.querySelector("#root");
+
+      const instances = new Map();
+
+      const ws = new WebSocket("ws://localhost:3000");
+
+      function triggerEvent(eventId) {
+        ws.send(JSON.stringify([EVENT, eventId]));
+      }
+
+      ws.onmessage = function onMessage(event) {
+        const data = JSON.parse(event.data);
+
+        const type = data[0];
+
+        switch (type) {
+          case CREATE_INSTANCE: {
+            const [, id, type, props, events] = data;
+            console.log("createInstance", id, type, props, events);
+
+            const instance = document.createElement(type);
+            instances.set(id, instance);
+
+            for (event in events) {
+              instance.addEventListener(event, () =>
+                triggerEvent(events[event])
+              );
+            }
+
+            break;
+          }
+          case CREATE_TEXT_INSTANCE: {
+            const [, id, text] = data;
+
+            const instance = document.createTextNode(text);
+            instances.set(id, instance);
+
+            break;
+          }
+          case APPEND_INITIAL_CHILD: {
+            const [, parent, child] = data;
+
+            const parentNode = instances.get(parent);
+            const childNode = instances.get(child);
+            parentNode.appendChild(childNode);
+
+            break;
+          }
+          case APPEND_CHILD_TO_CONTAINER: {
+            const [, child] = data;
+            // console.log("appendChildToContainer", parent, child);
+
+            const childNode = instances.get(child);
+            root.appendChild(childNode);
+
+            break;
+          }
+          case COMMIT_TEXT_UPDATE: {
+            const [, instance, newText] = data;
+
+            const instanceNode = instances.get(instance);
+            instanceNode.textContent = newText;
+
+            break;
+          }
+        }
+
+        // console.log(data);
+        // console.log(instances);
+      };
+    </script>
+  </body>
+</html>
