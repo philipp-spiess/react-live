@@ -17,5 +17,8 @@
     "ts-node-dev": "^1.0.0-pre.39",
     "typescript": "^3.4.5",
     "ws": "^7.0.0"
+  },
+  "scripts": {
+    "start": "tsnd --respawn --notify false server.tsx"
   }
 }

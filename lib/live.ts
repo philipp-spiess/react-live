@@ -6,126 +6,191 @@ const CREATE_TEXT_INSTANCE = "CREATE_TEXT_INSTANCE";
 const APPEND_INITIAL_CHILD = "APPEND_INITIAL_CHILD";
 const APPEND_CHILD_TO_CONTAINER = "APPEND_CHILD_TO_CONTAINER";
 const COMMIT_TEXT_UPDATE = "COMMIT_TEXT_UPDATE";
+const PREPARE_UPDATE = "PREPARE_UPDATE";
 
 const EVENT = "EVENT";
 
-function send(ws: WebSocket, data: any) {
-  ws.send(JSON.stringify(data));
-}
-
 type Context = {
   createId: () => number;
-  registerEvent: (callback: Function) => number;
-  dispatchEvent: (eventId: number) => void;
+  registerEvent: (
+    instance: Instance,
+    domEventName: string,
+    callback: Function
+  ) => void;
+  dispatchEvent: (
+    instance: Instance,
+    domEventName: string,
+    eventData: Object
+  ) => void;
 };
 
-let ws: any = null;
-const HostConfig: any = {
-  createInstance(type: any, props: any, ws: WebSocket, context: Context) {
-    let { children, onClick, ...filteredProps } = props;
-    console.log("createInstance", type, filteredProps);
+type Instance = number;
 
-    let events: any = {};
-    if (onClick) {
-      const eventId = context.registerEvent(onClick);
-      events.click = eventId;
-    }
+function createRenderer(ws: WebSocket): [any, Context] {
+  let i = 0;
+  function createId(): number {
+    return ++i;
+  }
 
-    const id = context.createId();
-    send(ws, [CREATE_INSTANCE, id, type, filteredProps, events]);
-    return id;
-  },
-
-  createTextInstance(text: string, ws: WebSocket, context: Context) {
-    console.log("createTextInstance", text);
-
-    const id = context.createId();
-    send(ws, [CREATE_TEXT_INSTANCE, id, text]);
-    return id;
-  },
-
-  appendInitialChild(parent: any, child: any) {
-    console.log("appendInitialChild", parent, child);
-
-    send(ws, [APPEND_INITIAL_CHILD, parent, child]);
-  },
-
-  finalizeInitialChildren(element: any, type: any, props: any) {
-    console.log("finalizeInitialChildren", type, props);
-  },
-
-  appendChildToContainer(ws: WebSocket, child: any) {
-    console.log("appendChildToContainer", child);
-    send(ws, [APPEND_CHILD_TO_CONTAINER, child]);
-  },
-
-  prepareUpdate(
-    instance: any,
-    type: any,
-    oldProps: any,
-    newProps: any,
-    ws: WebSocket
+  let instanceEventsMap: Map<Instance, Map<string, Function>> = new Map();
+  function registerEvent(
+    instance: Instance,
+    domEventName: string,
+    callback: Function
   ) {
-    // console.log("prepareUpdate", instance, type, oldProps, newProps);
-  },
-
-  commitTextUpdate(textInstance: any, oldText: string, newText: string) {
-    console.log("commitTextUpdate", textInstance, oldText, newText);
-    send(ws, [COMMIT_TEXT_UPDATE, textInstance, newText]);
-  },
-
-  getRootHostContext(ws: WebSocket): Context {
-    console.log("getRootHostContext");
-
-    let i = 0;
-    function createId() {
-      return ++i;
+    if (!instanceEventsMap.has(instance)) {
+      instanceEventsMap.set(instance, new Map());
     }
+    const eventMap: any = instanceEventsMap.get(instance);
 
-    let events = new Map();
-    function registerEvent(callback: Function) {
-      const id = createId();
-      events.set(id, callback);
+    eventMap.set(domEventName, callback);
+  }
+  function dispatchEvent(
+    instance: Instance,
+    domEventName: string,
+    eventData: Object
+  ) {
+    const eventMap: any = instanceEventsMap.get(instance);
+    const callback: any = eventMap.get(domEventName);
+
+    if (typeof callback === "function") {
+      callback(eventData);
+    }
+  }
+
+  const context = {
+    createId,
+    registerEvent,
+    dispatchEvent
+  };
+
+  let queue: Array<Object> = [];
+  function send(data: any) {
+    queue.push(data);
+  }
+  function flush() {
+    if (queue.length === 0) {
+      return;
+    }
+    ws.send(JSON.stringify(queue));
+    queue = [];
+  }
+
+  const HostConfig: any = {
+    createInstance(type: any, props: any, ws: WebSocket, context: Context) {
+      const instanceId = context.createId();
+
+      let newEventListeners: Array<string> = [];
+
+      let filteredProps: any = {};
+      for (let prop in props) {
+        const value = props[prop];
+
+        if (prop === "children") {
+          // ignore
+        } else if (isEventProp(prop)) {
+          const domEventName = reactEventToDomEvent(prop);
+
+          context.registerEvent(instanceId, domEventName, value);
+
+          if (value !== undefined) {
+            newEventListeners.push(domEventName);
+          }
+        } else {
+          filteredProps[prop] = value;
+        }
+      }
+
+      send([
+        CREATE_INSTANCE,
+        instanceId,
+        type,
+        filteredProps,
+        newEventListeners
+      ]);
+      return instanceId;
+    },
+
+    createTextInstance(text: string, ws: WebSocket, context: Context) {
+      const id = context.createId();
+      send([CREATE_TEXT_INSTANCE, id, text]);
       return id;
-    }
-    function dispatchEvent(id: number) {
-      const callback = events.get(id);
-      callback();
-    }
+    },
 
-    const context = {
-      createId,
-      registerEvent,
-      dispatchEvent
-    };
-    (ws as any)._context = context;
+    appendInitialChild(parent: any, child: any) {
+      send([APPEND_INITIAL_CHILD, parent, child]);
+    },
 
-    return context;
-  },
+    finalizeInitialChildren(element: any, type: any, props: any) {},
 
-  now() {
-    return Date.now();
-  },
-  getChildHostContext: (context: Context) => {
-    return context;
-  },
-  shouldSetTextContent(type: any, props: any) {
-    return false;
-  },
-  prepareForCommit() {
-    console.log("prepareForCommit");
-  },
-  resetAfterCommit() {
-    console.log("resetAfterCommit");
-  },
-  supportsMutation: true
-};
+    appendChildToContainer(ws: WebSocket, child: any) {
+      send([APPEND_CHILD_TO_CONTAINER, child]);
+    },
 
-const LiveRenderer = Reconciler(HostConfig);
+    prepareUpdate(instance: any, type: any, oldProps: any, newProps: any) {
+      let filteredProps: any = {};
+      let newEventListeners: Array<String> = [];
+      for (let prop in newProps) {
+        const value = newProps[prop];
+
+        if (prop === "children") {
+          continue;
+        }
+
+        if (oldProps[prop] === value) {
+          continue;
+        }
+
+        if (isEventProp(prop)) {
+          const domEventName = reactEventToDomEvent(prop);
+
+          context.registerEvent(instance, domEventName, value);
+
+          if (oldProps[prop] === undefined && value !== undefined) {
+            newEventListeners.push(domEventName);
+          }
+        } else {
+          filteredProps[prop] = value;
+        }
+      }
+
+      send([PREPARE_UPDATE, instance, filteredProps, newEventListeners]);
+    },
+
+    commitTextUpdate(textInstance: any, oldText: string, newText: string) {
+      send([COMMIT_TEXT_UPDATE, textInstance, newText]);
+    },
+
+    getRootHostContext(ws: WebSocket): Context {
+      return context;
+    },
+
+    getChildHostContext: (context: Context) => {
+      return context;
+    },
+
+    shouldSetTextContent(type: any, props: any) {
+      return false;
+    },
+
+    prepareForCommit() {},
+    resetAfterCommit() {
+      flush();
+    },
+
+    now() {
+      return Date.now();
+    },
+    supportsMutation: true
+  };
+
+  return [Reconciler(HostConfig), context];
+}
 
 export default {
-  render(element: JSX.Element, webSocket: WebSocket) {
-    ws = webSocket;
+  render(element: JSX.Element, ws: WebSocket) {
+    const [LiveRenderer, context] = createRenderer(ws);
+
     const root: Reconciler.FiberRoot = LiveRenderer.createContainer(
       ws,
       false,
@@ -134,21 +199,34 @@ export default {
 
     LiveRenderer.updateContainer(element, root, null, () => {});
 
-    const context: Context = (ws as any)._context;
-
     ws.on("message", (data: any) => {
       data = JSON.parse(data);
       const type = data[0];
 
       switch (type) {
         case EVENT: {
-          const [, eventId] = data;
-
-          context.dispatchEvent(eventId);
-          console.log("event", eventId);
+          const [, instance, eventName, eventData] = data;
+          context.dispatchEvent(instance, eventName, eventData);
           break;
         }
       }
     });
   }
 };
+
+function isEventProp(name: string): boolean {
+  if (
+    name.length > 2 &&
+    name[0] === "o" &&
+    name[1] === "n" &&
+    name[2] === name[2].toUpperCase()
+  ) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+function reactEventToDomEvent(name: string): string {
+  return name.toLowerCase().slice(2);
+}

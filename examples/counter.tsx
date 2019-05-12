@@ -1,6 +1,6 @@
 import * as React from "react";
 
-export default function App() {
+export default function Counter() {
   const [count, setCount] = React.useState(1);
 
   function increment() {

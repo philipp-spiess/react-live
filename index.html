@@ -1,0 +1,174 @@
+<html>
+  <head>
+    <title>React Live</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const CREATE_INSTANCE = "CREATE_INSTANCE";
+      const CREATE_TEXT_INSTANCE = "CREATE_TEXT_INSTANCE";
+      const APPEND_INITIAL_CHILD = "APPEND_INITIAL_CHILD";
+      const APPEND_CHILD_TO_CONTAINER = "APPEND_CHILD_TO_CONTAINER";
+      const COMMIT_TEXT_UPDATE = "COMMIT_TEXT_UPDATE";
+      const PREPARE_UPDATE = "PREPARE_UPDATE";
+
+      const EVENT = "EVENT";
+
+      const root = document.querySelector("#root");
+
+      const instances = new Map();
+
+      const ws = new WebSocket("ws://localhost:3000");
+
+      function triggerEvent(instance, eventName, eventData) {
+        ws.send(JSON.stringify([EVENT, instance, eventName, eventData]));
+      }
+
+      ws.onmessage = function onMessage(event) {
+        const queue = JSON.parse(event.data);
+
+        for (let data of queue) {
+          const type = data[0];
+
+          switch (type) {
+            case CREATE_INSTANCE: {
+              const [, instance, type, props, eventListeners] = data;
+
+              const instanceNode = document.createElement(type);
+              instances.set(instance, instanceNode);
+
+              applyProps(instanceNode, props);
+              applyEventListeners(instanceNode, instance, eventListeners);
+
+              break;
+            }
+            case CREATE_TEXT_INSTANCE: {
+              const [, instance, text] = data;
+
+              const instanceNode = document.createTextNode(text);
+              instances.set(instance, instanceNode);
+
+              break;
+            }
+            case APPEND_INITIAL_CHILD: {
+              const [, parent, child] = data;
+
+              const parentNode = instances.get(parent);
+              const childNode = instances.get(child);
+              parentNode.appendChild(childNode);
+
+              break;
+            }
+            case APPEND_CHILD_TO_CONTAINER: {
+              const [, child] = data;
+
+              const childNode = instances.get(child);
+              root.appendChild(childNode);
+
+              break;
+            }
+            case COMMIT_TEXT_UPDATE: {
+              const [, instance, newText] = data;
+
+              const instanceNode = instances.get(instance);
+              instanceNode.textContent = newText;
+
+              break;
+            }
+            case PREPARE_UPDATE: {
+              const [, instance, newProps, eventListeners] = data;
+              const instanceNode = instances.get(instance);
+              applyProps(instanceNode, newProps);
+              applyEventListeners(instanceNode, instance, eventListeners);
+            }
+          }
+
+          // console.log(data);
+          // console.log(instances);
+        }
+      };
+
+      function css(node, properties) {
+        for (let property in properties) {
+          const value = properties[property];
+
+          node.style[property] =
+            typeof value === "number" ? value + "px" : value;
+        }
+      }
+
+      function getPropsForEvent(nativeEvent) {
+        let j = 0;
+        let includedAllKeys = false;
+        let properties = [];
+        let obj = nativeEvent;
+        while (!includedAllKeys && j < 10) {
+          let keys = Object.keys(obj);
+          properties = properties.concat(keys);
+
+          if (keys.indexOf("target") !== -1) {
+            includedAllKeys = true;
+          }
+
+          obj = Object.getPrototypeOf(obj);
+          j++;
+        }
+
+        if (j >= 10) {
+          throw new Error("This should never happen.");
+        }
+
+        return properties;
+      }
+
+      function applyProps(instance, props) {
+        for (let prop in props) {
+          switch (prop) {
+            case "style": {
+              css(instance, props[prop]);
+              break;
+            }
+            default: {
+              instance[prop] = props[prop];
+              break;
+            }
+          }
+        }
+      }
+
+      function applyEventListeners(node, instance, eventListeners) {
+        for (let eventName of eventListeners) {
+          const previousListener = node["_prev$" + eventName];
+          if (typeof previousListener === "string") {
+            node.removeEventListener(eventName, previousListener, {
+              passive: true
+            });
+          }
+
+          function onEvent(nativeEvent) {
+            const eventProps = getPropsForEvent(nativeEvent);
+
+            let eventData = {};
+            for (let eventProp of eventProps) {
+              switch (eventProp) {
+                case "target":
+                case "currentTarget":
+                case "relatedTarget":
+                case "path":
+                case "view":
+                case "srcElement":
+                  break;
+                default:
+                  eventData[eventProp] = nativeEvent[eventProp];
+              }
+            }
+            triggerEvent(instance, eventName, eventData);
+          }
+
+          node.addEventListener(eventName, onEvent, { passive: true });
+          node["_prev$" + eventName] = onEvent;
+        }
+      }
+    </script>
+  </body>
+</html>
