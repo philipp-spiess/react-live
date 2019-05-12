@@ -7,8 +7,10 @@
     <script>
       const CREATE_INSTANCE = "CREATE_INSTANCE";
       const CREATE_TEXT_INSTANCE = "CREATE_TEXT_INSTANCE";
-      const APPEND_INITIAL_CHILD = "APPEND_INITIAL_CHILD";
+      const APPEND_CHILD = "APPEND_CHILD";
       const APPEND_CHILD_TO_CONTAINER = "APPEND_CHILD_TO_CONTAINER";
+      const REMOVE_CHILD = "REMOVE_CHILD";
+
       const COMMIT_TEXT_UPDATE = "COMMIT_TEXT_UPDATE";
       const PREPARE_UPDATE = "PREPARE_UPDATE";
 
@@ -50,12 +52,21 @@
 
               break;
             }
-            case APPEND_INITIAL_CHILD: {
+            case APPEND_CHILD: {
               const [, parent, child] = data;
 
               const parentNode = instances.get(parent);
               const childNode = instances.get(child);
               parentNode.appendChild(childNode);
+
+              break;
+            }
+            case REMOVE_CHILD: {
+              const [, parent, child] = data;
+
+              const parentNode = instances.get(parent);
+              const childNode = instances.get(child);
+              parentNode.removeChild(childNode);
 
               break;
             }
@@ -82,9 +93,6 @@
               applyEventListeners(instanceNode, instance, eventListeners);
             }
           }
-
-          // console.log(data);
-          // console.log(instances);
         }
       };
 
@@ -153,6 +161,10 @@
               switch (eventProp) {
                 case "target":
                 case "currentTarget":
+                  eventData[eventProp] = {
+                    value: nativeEvent[eventProp].value
+                  };
+                  break;
                 case "relatedTarget":
                 case "path":
                 case "view":

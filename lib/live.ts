@@ -3,8 +3,9 @@ import * as WebSocket from "ws";
 
 const CREATE_INSTANCE = "CREATE_INSTANCE";
 const CREATE_TEXT_INSTANCE = "CREATE_TEXT_INSTANCE";
-const APPEND_INITIAL_CHILD = "APPEND_INITIAL_CHILD";
+const APPEND_CHILD = "APPEND_CHILD";
 const APPEND_CHILD_TO_CONTAINER = "APPEND_CHILD_TO_CONTAINER";
+const REMOVE_CHILD = "REMOVE_CHILD";
 const COMMIT_TEXT_UPDATE = "COMMIT_TEXT_UPDATE";
 const PREPARE_UPDATE = "PREPARE_UPDATE";
 
@@ -117,8 +118,14 @@ function createRenderer(ws: WebSocket): [any, Context] {
       return id;
     },
 
-    appendInitialChild(parent: any, child: any) {
-      send([APPEND_INITIAL_CHILD, parent, child]);
+    appendInitialChild(parent: Instance, child: Instance) {
+      send([APPEND_CHILD, parent, child]);
+    },
+    appendChild(parent: Instance, child: Instance) {
+      send([APPEND_CHILD, parent, child]);
+    },
+    removeChild(parent: Instance, child: Instance) {
+      send([REMOVE_CHILD, parent, child]);
     },
 
     finalizeInitialChildren(element: any, type: any, props: any) {},

@@ -6,6 +6,7 @@ import ReactLive from "./lib/live";
 
 import Counter from "./examples/counter";
 import DragBox from "./examples/drag-box";
+import TodoList from "./examples/todo-list";
 
 const app = express();
 
@@ -14,7 +15,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 wss.on("connection", (ws: WebSocket) => {
-  ReactLive.render(<DragBox />, ws);
+  ReactLive.render(<TodoList />, ws);
 });
 
 app.use(express.static("."));
